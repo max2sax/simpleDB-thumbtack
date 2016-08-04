@@ -28,8 +28,13 @@
 using namespace std;
 class Command {
 private:
+	std::string command; 
 public:
+	Command(); 
+	Command(std::string com); 
+	~Command(); 
 }; 
+
 class Transaction{
 private: 
 	std::stack<Command> commandStack; 
@@ -37,9 +42,17 @@ public:
 	Transaction(); 
 	Transaction(Transaction& other); 
 	~Transaction() { /*empty the stack: */while (!commandStack.empty()) commandStack.pop(); };
+	void addTransaction(Command& newCommand); 
+	void executeTransaction(); 
 };
+
 
 int _tmain() {
 	/* Enter your code here. Read input from STDIN. Print output to STDOUT */
+	std::string input; 
+	std::deque<Transaction> transactionList;
+	while ((input << cin.getline()) != "END") {
+
+	}
 	return 0;
 }
