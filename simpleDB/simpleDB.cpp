@@ -27,13 +27,34 @@
 
 using namespace std;
 class Key;
+class Value; 
 
+//this class, and it's associated iterator will make it easy to insert and find values, 
+// without worrying about the underlying datastructure - in this case I'm going to use a binary tree: 
+class ValueTree {
+public: 
+	class ValueTreeIterator {
+	public: 
+		ValueTreeIterator(){}; 
+		Value* operator*() { return m_value; }; 
+		ValueTreeIterator operator++(){}; 
+	private: 
+		Value* m_value; 
+		ValueTreeIterator* nextValue; 
+		ValueTreeIterator* prevValue; 
+	};
+public: 
+	ValueTree(); //basic constructor: 
+	ValueTreeIterator insertValue(Value& val){}; 
+	ValueTreeIterator findValue(Value& val) {}; 
+private:
+	//I want to keep a well balanced tree, so I need to keep the min and max values. 
+	ValueTreeIterator headValue; 
+	ValueTreeIterator minValue;
+	ValueTreeIterator maxValue; 
+};
 class Value {
 public:
-	Value() : m_value(0){
-		value_valid = false;
-	}; 
-	//Value(Key& referee): m_value(0) { value_valid = false; references.push_back(referee); };
 	Value(Key& referee, int val) : m_value(val) { value_valid = true; references.push_back(referee); };
 	Value(Value& other): m_value(other.m_value){ 
 		value_valid = other.value_valid; 
@@ -62,22 +83,6 @@ private:
 };
 
 class DataBase {
-	class Transaction{
-	public:
-		Transaction();
-		Transaction(Command& c) { commandStack.push(c); }
-		Transaction(Transaction& other);
-		~Transaction() { /*empty the stack: */while (!commandStack.empty()) commandStack.pop(); };
-		void addCommand(Command& newCommand);
-		void executeTransaction() {
-			while (!commandStack.empty()) {
-
-			}
-		};
-	private:
-		std::stack<Command> commandStack;
-	};
-
 public:
 	DataBase(){ commitCommands = true;  values = nullptr_t; };
 	DataBase(DataBase& original) { commitCommands = original.commitCommands; };
@@ -85,29 +90,50 @@ public:
 
 	std::string update_database(Command& c) {
 		//
-		if (c.name == "BEGIN") {
+		if (c.getCommandName() == "BEGIN") {
 			add_transaction();
 		}
-		else if (c.name == "ROLLBACK") {
+		else if (c.getCommandName() == "ROLLBACK") {
 			return remove_transaction();
 		}
-		else if (c.name == "COMMIT") {
+		else if (c.getCommandName() == "COMMIT") {
+			commitCommands = true; 
 			for (auto&& trans : transactions) {
-				trans.executeTransaction();
+				trans.executeTransaction(*this);
 			}
 		}
-		else if (c.name == "END") {
+		else if (c.getCommandName() == "END") {
 			return "";
 		}
 		else {
 			if (commitCommands) {
 				//execute now and return; 
+				return run_command(c); 
 			}
 			transactions.front().addCommand(c);
 		}
 		return "";
 	};
 private:
+	class Transaction{
+	public:
+		Transaction();
+		Transaction(Command& c) { commandStack.push(c); }
+		Transaction(Transaction& other);
+		~Transaction() { /*empty the stack: */while (!commandStack.empty()) commandStack.pop(); };
+		void addCommand(Command& newCommand);
+		void executeTransaction(DataBase& db) {
+			while (!commandStack.empty()) {
+				auto& c = commandStack.top();
+				commandStack.pop();
+				db.run_command(c);
+			}
+		};
+		friend class DataBase; 
+	private:
+		std::stack<Command> commandStack;
+	};
+	
 	bool commitCommands;
 	std::vector<Key&> keys;
 	std::deque<Transaction&> transactions;
@@ -118,20 +144,21 @@ private:
 			return "NO TRANSACTION";
 		}
 		transactions.pop_front();
+		if (transactions.empty()) commitCommands = true; 
 		return "";
 	};
-	void add_transaction() { this->transactions.push_front(Transaction()); };
+	void add_transaction() { commitCommands = false;  this->transactions.push_front(Transaction()); };
 	std::string run_command(Command& c){
-		if (c.name == "SET") {
+		if (c.getCommandName() == "SET") {
 
 		}
-		else if (c.name == "GET") {
+		else if (c.getCommandName() == "GET") {
 
 		}
-		else if (c.name == "UNSET") {
+		else if (c.getCommandName() == "UNSET") {
 
 		}
-		else if (c.name == "NUMEQUALTO") {
+		else if (c.getCommandName() == "NUMEQUALTO") {
 
 		}
 		return ""; 
@@ -140,10 +167,12 @@ private:
 
 class Command {
 public:
-	Command()  { command = ""; variable = ""; value = 0; };
+	Command()  { command = ""; keyName = ""; value = 0; };
 	Command(std::string &com) : command(com){};
 	~Command() {}; //nothing to delete};
-
+	std::string getCommandName(){
+		return command;
+	};
 	friend std::stringstream& operator>>(stringstream& is, Command& c) {
 		//read in command info, and set invalid if cannot parse. 
 		try {
@@ -165,20 +194,16 @@ public:
 		return is; 
 	};
 	friend std::ostream& operator<<(ostream& out, Command& c) {
-		//read in command info, and set invalid if cannot parse. 
-		try {
-			out << c.command << " ";
-			out << c.variable << " ";
-			out << c.value << " ";
-		}
-		catch (exception e){
-			out << "invalid command"; 
-		}
-		return out; 
+		//write command info to output stream
+		out << c.command << " ";
+		out << c.keyName << " ";
+		out << c.value << " ";
+
+		return out;
 	};
 private:
 	std::string command;
-	std::string variable;
+	std::string keyName;
 	int value;
 };
 
@@ -196,7 +221,8 @@ int _tmain() {
 		std::stringstream instream(input); 
 		Command c; 
 		instream >> c;
-		masterDatabase.update_database(c); 
+		auto updateResult = masterDatabase.update_database(c); 
+		cout << updateResult << std::endl; 
 	}
 	return 0;
 }
