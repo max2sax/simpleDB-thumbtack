@@ -29,46 +29,105 @@ using namespace std;
 class Key;
 class Value; 
 
-//this class, and it's associated iterator will make it easy to insert and find values, 
+//this class, and it's associated psuedo-iterator will make it easy to insert and find values, 
 // without worrying about the underlying datastructure - in this case I'm going to use a binary tree: 
 class ValueTree {
+
 public: 
 	class ValueTreeIterator {
 	public: 
-		ValueTreeIterator(){}; 
-		Value* operator*() { return m_value; }; 
-		ValueTreeIterator operator++(){}; 
+		ValueTreeIterator(Value& val, ValueTreeIterator* next, ValueTreeIterator* prev, ValueTreeIterator* parent) 
+			: m_value(&val), parentVal(parent), nextValue(next), prevValue(prev){ };
+		Value operator*() { return *m_value; }; 
+
+		ValueTreeIterator* getNext() { return nextValue; };
+		ValueTreeIterator* getPrev() { return prevValue; };
+		ValueTreeIterator* getParent() { return parentVal; }; 
+		void setParent(ValueTreeIterator* par) { parentVal = par; }; 
 	private: 
 		Value* m_value; 
+		ValueTreeIterator* parentVal; 
 		ValueTreeIterator* nextValue; 
 		ValueTreeIterator* prevValue; 
 	};
 public: 
 	ValueTree(); //basic constructor: 
-	ValueTreeIterator insertValue(Value& val){}; 
-	ValueTreeIterator findValue(Value& val) {}; 
+	void insertValue(Value& newVal){
+		if (newVal == *minValue) {
+			//update the references
+		}
+		else if (newVal == *maxValue) {
+			//update maxValue references
+		}
+		else if (newVal == *headValue) {
+			//update head value references
+		}
+		else if (newVal < *minValue) {
+			//need to rebalance the tree
+		}
+		else if (newVal > *maxValue) {
+			//rebalance the tree
+		}
+		ValueTreeIterator* thisNode = &headValue; 
+		ValueTreeIterator* nextNode = thisNode; 
+		while (nextNode != nullptr) {
+			thisNode = nextNode;
+			nextNode = next(thisNode, newVal);
+		}
+		if (thisNode == nullptr) {
+			thisNode = new ValueTreeIterator(newVal);
+		}
+		nextNode = new ValueTreeIterator(newVal, thisNode->getNext(), thisNode->getPrev(), thisNode); 
+		if (thisNode->getNext() != nullptr) {
+			thisNode->getNext()->setParent(nextNode); 
+		}
+		if (thisNode->getPrev() != nullptr) {
+			thisNode->getPrev->setParent(nextNode); 
+		}
+	}; 
+	Value* findValue(Value& val) {}; 
+	
 private:
 	//I want to keep a well balanced tree, so I need to keep the min and max values. 
+	ValueTreeIterator* next(ValueTreeIterator* current, const Value& v) {
+	};
+	ValueTreeIterator* prev(const ValueTreeIterator& current);
 	ValueTreeIterator headValue; 
 	ValueTreeIterator minValue;
 	ValueTreeIterator maxValue; 
 };
 class Value {
 public:
-	Value(Key& referee, int val) : m_value(val) { value_valid = true; references.push_back(referee); };
-	Value(Value& other): m_value(other.m_value){ 
-		value_valid = other.value_valid; 
-		for (auto&& key : other.references) {
+	Value(Key& referee, int val) : m_value(val), value_valid(true) {references.push_back(referee); };
+	Value(Value& other) : m_value(other.m_value), value_valid(other.value_valid) {
+		for (auto key : other.references) {
 			references.push_back(key); 
 		}
 	};
+	Value operator=(Value& other) {
+		value_valid = other.value_valid; 
+		m_value = other.m_value; 
+		for (auto key : other.references)
+		{
+			references.push_back(key); 
+		}
+	}; 
 	bool has_references() {
 		return !(references.empty());
 	}; 
 	void add_reference(Key& referee) { references.push_back(referee); };
-private: 
+	bool operator==(Value& other) {
+		return this->m_value == other.m_value; 
+	};
+	bool operator<(Value& other) {
+		return this->m_value < other.m_value;
+	};
+	bool operator>(Value& other) {
+		return this->m_value > other.m_value;
+	};
+private:
 	bool value_valid; 
-	const int m_value; 
+	int m_value; 
 	std::vector<Key&> references; 
 };
 class Key {
@@ -84,7 +143,7 @@ private:
 
 class DataBase {
 public:
-	DataBase(){ commitCommands = true;  values = nullptr_t; };
+	DataBase(){ commitCommands = true;  values = nullptr; };
 	DataBase(DataBase& original) { commitCommands = original.commitCommands; };
 	~DataBase(){ keys.clear(); delete values; };
 
