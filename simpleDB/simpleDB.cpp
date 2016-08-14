@@ -30,6 +30,7 @@ using namespace std;
 class Command {
 public:
 	Command();
+	Command(const Command&); 
 	~Command() {}; //nothing to delete};
 	std::string getCommandName(){ return command; };
 	std::string getKeyName() { return this->keyName; };
@@ -109,12 +110,17 @@ private:
 Command::Command() {
 	command = ""; keyName = ""; value = 0;
 }
+Command::Command(const Command& other) {
+	this->command = other.command; 
+	this->keyName = other.keyName; 
+	this->value = other.value; 
+}
 void DataBase::Transaction::executeTransaction(DataBase& db)
 {
 	while (!commandStack.empty()) {
 		auto& c = commandStack.top();
-		commandStack.pop();
 		db.run_command(c);
+		commandStack.pop();
 	}
 }
 DataBase::Transaction::Transaction(Transaction& other) {
@@ -141,6 +147,8 @@ std::string DataBase::update_database(Command& c)  {
 		for (auto&& trans : transactions) {
 			trans.executeTransaction(*this);
 		}
+		//remove all transactions: 
+		transactions.clear(); 
 	}
 	else if (c.getCommandName() == "END") {
 		return "";
@@ -231,7 +239,7 @@ int _tmain() {
 		Command c; 
 		instream >> c;
 		auto updateResult = masterDatabase.update_database(c); 
-		if (updateResult != "") cout << updateResult << std::endl; 
+		if (updateResult != "") cout << "> " << updateResult << std::endl; 
 	}
 	return 0;
 }
