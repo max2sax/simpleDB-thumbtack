@@ -79,6 +79,8 @@ private:
 		std::stack<Command> commandStack;
 	};
 	
+	std::multimap<int, std::string> values; 
+	std::map<std::string, int> keys; 
 	bool commitCommands;
 	std::deque<Transaction&> transactions;
 	std::string remove_transaction() {
@@ -93,16 +95,55 @@ private:
 	void add_transaction() { commitCommands = false;  this->transactions.push_front(Transaction()); };
 	std::string run_command(Command& c){
 		if (c.getCommandName() == "SET") {
-
+			//put in the values map and the keys map
+			auto alreadySet = keys.find(c.getKeyName());
+			if (alreadySet != keys.end()) {
+				//then this is a valid value and we can just update it:
+				//first get the element with the current value:
+				auto elements = values.equal_range(alreadySet->second); 
+				auto it = elements.first;
+				for (it; it != elements.second; it++) {
+					if (it->second == c.getKeyName()) break;
+				}
+				//insert the new value and remove the old.
+				values.insert(std::pair<int, std::string>(c.getValue, c.getKeyName())); 
+				alreadySet->second = c.getValue();
+				values.erase(it); 
+				return ""; 
+			}
+			//we don't have this key already, so just insert them. It doesn't matter if the
+			// value already exists since a value can have multiple keys.
+			keys.insert(std::pair<std::string, int>(c.getKeyName, c.getValue())); 
+			values.insert(std::pair<int, std::string>(c.getValue, c.getKeyName()));
+			return ""; 
 		}
 		else if (c.getCommandName() == "GET") {
-
+			auto cur = keys.find(c.getKeyName()); 
+			if (cur == keys.end()) {
+				return "NULL"; 
+			}
+			return std::to_string(cur->second); 
 		}
 		else if (c.getCommandName() == "UNSET") {
-
+			auto currentKey = keys.find(c.getKeyName());
+			if (currentKey != keys.end()) {
+				//then this is a valid value and we can just remove it:
+				//first get the value element with the current key:
+				auto elements = values.equal_range(currentKey->second);
+				auto it = elements.first;
+				for (it; it != elements.second; it++) {
+					if (it->second == c.getKeyName()) break;
+				}
+				//remove the keys
+				keys.erase(currentKey);
+				values.erase(it);
+				return "";
+			}
+			//there's nothing to remove.
 		}
 		else if (c.getCommandName() == "NUMEQUALTO") {
-
+			auto count = values.count(c.getValue()); 
+			return std::to_string(count); 
 		}
 		return ""; 
 	};
@@ -116,18 +157,28 @@ public:
 	std::string getCommandName(){
 		return command;
 	};
+	std::string getKeyName() { return this->keyName; }; 
+	int getValue() { return this->value; };
 	friend std::stringstream& operator>>(stringstream& is, Command& c) {
 		//read in command info, and set invalid if cannot parse. 
 		try {
 			is >> c.command;
-			if (!is.eof()) {
-				//read next, which will be a variable name: 
-				is >> c.variable; 
+			if (is.eof()) { return; }
+			if (c.command == "NUMEQUALTO") {
+				// read into value: 
+				is >> c.value; 
 			}
-			if (!is.eof()) {
-				//read next, which will be the value (if we're setting a variable): 
-				is >> c.value;
+			if (is.eof()) {
+				return;
 			}
+			//read next, which will be a variable name - either get, set or unset: 
+			is >> c.variable;
+			
+			if (is.eof()) {
+				return;
+			}
+			//read next, which will be the value (if we're setting a variable): 
+			is >> c.value;
 		}
 		catch (exception e){
 			c.command = ""; 
