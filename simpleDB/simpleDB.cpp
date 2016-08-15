@@ -30,11 +30,15 @@ using namespace std;
 class Command {
 public:
 	Command();
+	Command(std::string com, std::string key, int v); 
 	Command(const Command&); 
 	~Command() {}; //nothing to delete};
 	std::string getCommandName(){ return command; };
 	std::string getKeyName() { return this->keyName; };
 	int getValue() { return this->value; };
+	void setCommandName(const std::string com) { command = com; };
+	void setKeyName(const std::string key) { keyName = key; }; 
+	void setValue(const int v) { value = v; };
 	friend std::stringstream& operator>>(stringstream& is, Command& c) {
 		//read in command info, and set invalid if cannot parse. 
 		try {
@@ -110,6 +114,11 @@ private:
 Command::Command() {
 	command = ""; keyName = ""; value = 0;
 }
+Command::Command(std::string com, std::string key, int v) {
+	this->command = com; 
+	this->keyName = key; 
+	this->value = v; 
+}
 Command::Command(const Command& other) {
 	this->command = other.command; 
 	this->keyName = other.keyName; 
@@ -135,39 +144,64 @@ DataBase::Transaction::Transaction(Transaction& other) {
 	}
 }
 std::string DataBase::update_database(Command& c)  {
-	//
+	auto _addUndoCommand = [&](Command& com) {
+		Command reverseCommand("", com.getKeyName(), 0);
+		Command searchCommand("GET", com.getKeyName(), 0);
+		std::string valStr = run_command(searchCommand);
+		if (valStr == "NULL" && com.getCommandName() == "SET") {
+			reverseCommand.setCommandName("UNSET");
+		}
+		else if (valStr == "NULL" && com.getCommandName() == "UNSET") {
+		}
+		else if (valStr != "NULL") {
+			//this should be true for either set or unset - set to previous value
+			reverseCommand.setCommandName("SET");
+			reverseCommand.setValue(std::strtol(valStr.c_str(), nullptr, 10));
+		}
+		//add reverse command to transaction in order to undo it; 
+		if (reverseCommand.getCommandName() != "") {
+			transactions.front().addCommand(reverseCommand);
+		}
+	};
 	if (c.getCommandName() == "BEGIN") {
 		add_transaction();
 	}
 	else if (c.getCommandName() == "ROLLBACK") {
+		//run the most recent transaction: 
 		return remove_transaction();
 	}
 	else if (c.getCommandName() == "COMMIT") {
-		commitCommands = true;
-		for (auto&& trans : transactions) {
-			trans.executeTransaction(*this);
-		}
 		//remove all transactions: 
-		transactions.clear(); 
+		if (transactions.empty()) return "NO TRANSACTIONS"; 
+		transactions.clear();
 	}
 	else if (c.getCommandName() == "END") {
 		return "";
 	}
-	else {
-		if (commitCommands) {
-			//execute now and return; 
-			return run_command(c);
-		}
-		transactions.front().addCommand(c);
+	else if (c.getCommandName() == "SET" ) {
+		if (commitCommands == false)
+			_addUndoCommand(c); 
+		return run_command(c); 
 	}
-	return "";
+	else if (c.getCommandName() == "UNSET") {
+		if (commitCommands == false) {
+			_addUndoCommand(c); 
+		}
+		return run_command(c); 
+	}
+	else if (c.getCommandName() == "GET" || c.getCommandName() == "NUMEQUALTO"){
+		//either get or numequalto - run these immediately on the current state: 
+		return run_command(c); 
+	}
+	return ""; //if it's not a valid command then don't do anything and return.
 }
 std::string DataBase::remove_transaction(){
 	//removes the most recently added transaction without executing it: 
 	if (transactions.empty()) {
 		return "NO TRANSACTION";
 	}
-	transactions.pop_front();
+	transactions.front().executeTransaction(*this);
+	transactions.pop_front(); 
 	if (transactions.empty()) commitCommands = true;
 	return "";
 };
