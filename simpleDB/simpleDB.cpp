@@ -24,7 +24,7 @@
 #include <iostream>
 #include <algorithm>
 #include <unordered_map>
-
+#include <unordered_set>
 using namespace std;
 
 class Command {
@@ -87,7 +87,7 @@ private:
 	public:
 		Transaction() {};
 		Transaction(Command c) { commandStack.push(c); }
-		Transaction(Transaction& other); 
+		Transaction(const Transaction& other); 
 		~Transaction() { /*empty the stack: */while (!commandStack.empty()) commandStack.pop(); };
 		void addCommand(Command newCommand) { commandStack.push(newCommand); };
 		void executeTransaction(DataBase& db); 
@@ -102,7 +102,7 @@ public:
 	std::string update_database(Command &c);
 private:
 	//class variables
-	std::multimap<int, std::string> values; 
+	std::map<int, std::unordered_set<std::string>> values; 
 	std::map<std::string, int> keys; 
 	bool commitCommands;
 	std::deque<Transaction> transactions;
@@ -132,19 +132,12 @@ void DataBase::Transaction::executeTransaction(DataBase& db)
 		commandStack.pop();
 	}
 }
-DataBase::Transaction::Transaction(Transaction& other) {
-	std::deque<Command> temp;
-	while (!other.commandStack.empty()) {
-		temp.push_front(other.commandStack.top());
-		other.commandStack.pop(); 
-	}
-	for (auto c : temp) {
-		other.commandStack.push(c); 
-		this->commandStack.push(c); 
-	}
+DataBase::Transaction::Transaction(const Transaction& other) {
+	this->commandStack = other.commandStack; 
+	std::deque<Command> temp = commandStack._Get_container();
 }
 std::string DataBase::update_database(Command& c)  {
-	auto _addUndoCommand = [&](Command& com) {
+	auto _getUndoCommand = [&](Command& com) {
 		Command reverseCommand("", com.getKeyName(), 0);
 		Command searchCommand("GET", com.getKeyName(), 0);
 		std::string valStr = run_command(searchCommand);
@@ -158,10 +151,7 @@ std::string DataBase::update_database(Command& c)  {
 			reverseCommand.setCommandName("SET");
 			reverseCommand.setValue(std::strtol(valStr.c_str(), nullptr, 10));
 		}
-		//add reverse command to transaction in order to undo it; 
-		if (reverseCommand.getCommandName() != "") {
-			transactions.front().addCommand(reverseCommand);
-		}
+		return reverseCommand; 
 	};
 	if (c.getCommandName() == "BEGIN") {
 		add_transaction();
@@ -179,13 +169,18 @@ std::string DataBase::update_database(Command& c)  {
 		return "";
 	}
 	else if (c.getCommandName() == "SET" ) {
-		if (commitCommands == false)
-			_addUndoCommand(c); 
+		if (commitCommands == false) {
+			auto reverseCommand = _getUndoCommand(c);
+			if (reverseCommand.getCommandName() != "")
+				transactions.front().addCommand(reverseCommand); 
+		}
 		return run_command(c); 
 	}
 	else if (c.getCommandName() == "UNSET") {
 		if (commitCommands == false) {
-			_addUndoCommand(c); 
+			auto reverseCommand = _getUndoCommand(c); 
+			if (reverseCommand.getCommandName() != "")
+				transactions.front().addCommand(reverseCommand);
 		}
 		return run_command(c); 
 	}
@@ -196,7 +191,7 @@ std::string DataBase::update_database(Command& c)  {
 	return ""; //if it's not a valid command then don't do anything and return.
 }
 std::string DataBase::remove_transaction(){
-	//removes the most recently added transaction without executing it: 
+	//executes the most recently added transaction: 
 	if (transactions.empty()) {
 		return "NO TRANSACTION";
 	}
@@ -208,53 +203,70 @@ std::string DataBase::remove_transaction(){
 std::string DataBase::run_command(Command& c) {
 	if (c.getCommandName() == "SET") {
 		//put in the values map and the keys map
-		auto alreadySet = keys.find(c.getKeyName());
-		if (alreadySet != keys.end()) {
+		auto currentKeyValue = keys.find(c.getKeyName());
+		auto newValueIt = values.find(c.getValue()); 
+
+		if (currentKeyValue != keys.end()) {
 			//then this is a valid value and we can just update it:
 			//first get the element with the current value:
-			auto elements = values.equal_range(alreadySet->second);
-			auto it = elements.first;
-			for (it; it != elements.second; it++) {
-				if (it->second == c.getKeyName()) break;
-			}
-			//insert the new value and remove the old.
-			values.insert(std::pair<int, std::string>(c.getValue(), c.getKeyName()));
-			alreadySet->second = c.getValue();
-			values.erase(it);
-			return "";
+			auto val = values.find(currentKeyValue->second); //O(log(n)) where n = number values in DB
+			auto& elements = val->second;
+			auto oldLocation = std::find(elements.begin(), elements.end(), c.getKeyName()); //O(1) for a set
+
+			//update the value of the current key
+			currentKeyValue->second = c.getValue();
+
+			//remove the key from the current value
+			elements.erase(oldLocation);
+			
+			if (val->second.size() == 0) values.erase(val); 
 		}
-		//we don't have this key already, so just insert them. It doesn't matter if the
-		// value already exists since a value can have multiple keys.
-		keys.insert(std::pair<std::string, int>(c.getKeyName(), c.getValue()));
-		values.insert(std::pair<int, std::string>(c.getValue(), c.getKeyName()));
+		else {
+			//we don't have this key already, so just insert it
+			keys.insert(std::pair<std::string, int>(c.getKeyName(), c.getValue()));
+		}
+		
+		if (newValueIt != values.end()) {
+			//If the value already exists just push the key to this value
+			newValueIt->second.insert(c.getKeyName());
+			return ""; 
+		}
+		//remove the old value: 
+		
+		//insert a new value for this key: 
+		std::unordered_set<std::string> valKeys; 
+		valKeys.insert(c.getKeyName()); 
+		values.insert(std::pair<int, std::unordered_set<std::string>>(c.getValue(),valKeys));
 		return "";
 	}
 	else if (c.getCommandName() == "GET") {
-		auto cur = keys.find(c.getKeyName());
-		if (cur == keys.end()) {
+		auto currentValIt = keys.find(c.getKeyName());
+		if (currentValIt == keys.end()) {
 			return "NULL";
 		}
-		return std::to_string(cur->second);
+		return std::to_string(currentValIt->second);
 	}
 	else if (c.getCommandName() == "UNSET") {
 		auto currentKey = keys.find(c.getKeyName());
 		if (currentKey != keys.end()) {
 			//then this is a valid value and we can just remove it:
 			//first get the value element with the current key:
-			auto elements = values.equal_range(currentKey->second);
-			auto it = elements.first;
-			for (it; it != elements.second; it++) {
-				if (it->second == c.getKeyName()) break;
-			}
+			auto val = values.find(currentKey->second); //O(log(n)) where n = number values in DB
+			auto& elements = val->second; 
+			auto it = std::find(elements.begin(), elements.end(), c.getKeyName()); //O(1) for a set
+			
 			//remove the keys
 			keys.erase(currentKey);
-			values.erase(it);
+			elements.erase(it); 
+			if (elements.size() == 0) values.erase(val);
 			return "";
 		}
 		//there's nothing to remove.
 	}
 	else if (c.getCommandName() == "NUMEQUALTO") {
-		auto count = values.count(c.getValue());
+		auto val = values.find(c.getValue()); 
+		if (val == values.end()) return "0"; 
+		auto count = val->second.size();
 		return std::to_string(count);
 	}
 	return "";
@@ -275,5 +287,6 @@ int _tmain() {
 		auto updateResult = masterDatabase.update_database(c); 
 		if (updateResult != "") cout << "> " << updateResult << std::endl; 
 	}
+
 	return 0;
 }
