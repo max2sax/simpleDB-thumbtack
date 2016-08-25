@@ -134,13 +134,12 @@ void DataBase::Transaction::executeTransaction(DataBase& db)
 }
 DataBase::Transaction::Transaction(const Transaction& other) {
 	this->commandStack = other.commandStack; 
-	std::deque<Command> temp = commandStack._Get_container();
 }
 std::string DataBase::update_database(Command& c)  {
 	auto _getUndoCommand = [&](Command& com) {
 		Command reverseCommand("", com.getKeyName(), 0);
-		Command searchCommand("GET", com.getKeyName(), 0);
-		std::string valStr = run_command(searchCommand);
+		Command searchCommand("GET", com.getKeyName(), 0); 
+		std::string valStr = run_command(searchCommand);// O(log(n)) for search
 		if (valStr == "NULL" && com.getCommandName() == "SET") {
 			reverseCommand.setCommandName("UNSET");
 		}
